@@ -59,7 +59,7 @@ const emailMessage = (event, email, user, message) => {
 const onMessage = (api, event) => {
 	for (let i = 0; i < exports.config.respond.length; i++) {
 		const pester = exports.config.respond[i];
-		if (event.thread_id === pester.thread && event.sender_id === pester.id) {
+		if (event.thread_id == pester.thread && event.sender_id == pester.id) {
 			exports.config.respond.splice(i, 1);
 			i--;
 			api.sendMessage(`@${pester.name}, @${pester.from} says: ${pester.message}`, event.thread_id);
@@ -70,7 +70,7 @@ const onMessage = (api, event) => {
 const onRead = readObj => {
 	for (let i = 0; i < exports.config.seen.length; i++) {
 		const pester = exports.config.seen[i];
-		if (readObj.thread_id === pester.thread && readObj.sender_id === pester.id) {
+		if (readObj.thread_id == pester.thread && readObj.sender_id == pester.id) {
 			exports.config.seen.splice(i, 1);
 			i--;
 			facebookHandle.getApi().sendMessage(`@${pester.name}, @${pester.from} says: ${pester.message}`, readObj.thread_id);
@@ -103,7 +103,7 @@ exports.load = platform => {
 	ensure('respond', []);
 	platform.on('message', onMessage);
 	if (exports.config.emailConfig) {
-		mailTransport = nodemailer.createTransport(exports.config.emailConfig);
+		mailTransport = nodeMailer.createTransport(exports.config.emailConfig);
 	}
 	else {
 		LOG.warn('Email SMTP server has not been configured');
