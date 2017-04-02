@@ -1,15 +1,25 @@
 const argsParser = require('concierge/arguments'),
 	emailValidator = require('email-validator'),
-	nodeMailer = require('nodemailer');
+	nodeMailer = require('nodemailer'),
+	twilio = require('twilio');
 
-let mailTransport = null;
+let mailTransport = null,
+	twilioTransport = null;
 	
 const privateMessage = (api, user, message) => {
 	api.sendPrivateMessage(message, user.id);
 };
 
 const textMessage = (phoneNumber, user, message) => {
-	
+	twilioTransport.sendMessage({
+		to: phoneNumber,
+		from: exports.config.smsConfig.phoneNumber,
+		body: message
+	}, (err, responseData) => {
+		if (err) {
+			throw new Error('Could not send the SMS.');
+		}
+	});
 };
 
 const seenChat = (api, event, user, message) => {
@@ -66,6 +76,13 @@ exports.load = platform => {
 	else {
 		LOG.warn('Email SMTP server has not been configured');
 	}
+	
+	if (exports.config.smsConfig) {
+		twilioTransport = twilio(exports.config.smsConfig.sid, exports.config.smsConfig.token);
+	}
+	else {
+		LOG.warn('SMS settings have not been configured');
+	}
 };
 
 exports.unload = platform => {
@@ -92,8 +109,8 @@ exports.run = (api, event) => {
 				if (!/^\+?[0-9]+$/.test(vals[0])) {
 					throw new Error('Invalid phone number provided, please use international format (e.g. +64123456789)');
 				}
-				if (vals[0][0] === '+') {
-					vals[0] = '00' + vals[0].slice(1);
+				if (!exports.config.smsConfig) {
+					throw new Error('Please configure your SMS settings (see https://twilio.github.io/twilio-node) and restart the module before continuing.');
 				}
 				pesterQueue.push(textMessage.bind(this, vals[0]));
 			}
