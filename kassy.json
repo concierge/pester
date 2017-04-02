@@ -1,0 +1,10 @@
+{
+	"name": "pester",
+	"version": 1.0,
+	"startup": "pester.js",
+	"command": "pester",
+	"help": [
+		["{{commandPrefix}}pester", "Pesters someone to get their attention.",
+		"Sends a person messages via multiple different means and on multiple different events in order to get their attention. Use the --help option for details."]
+	]
+}
