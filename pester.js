@@ -6,12 +6,37 @@ const argsParser = require('concierge/arguments'),
 let mailTransport = null,
 	twilioTransport = null,
 	facebookHandle = null;
-	
+
+const ensure = (name, def, obj) => {
+    if (!obj) {
+        obj = exports.config;
+    }
+    if (!obj[name]) {
+        obj[name] = def;
+    }
+};
+
 const privateMessage = (api, event, user, message) => {
 	api.sendPrivateMessage(`${user.name}, ${event.sender_name} says: ${message}`, user.id);
 };
 
-const textMessage = (phoneNumber, user, message) => {
+const textMessage = (event, phoneNumber, user, message) => {
+    ensure(event.event_source, {}, exports.config.stored);
+    ensure(user.id, {}, exports.config.stored[event.event_source]);
+    if (phoneNumber === '-') {
+        if (exports.config.stored[event.event_source][user.id].phone) {
+            phoneNumber = exports.config.stored[event.event_source][user.id].phone;
+        }
+        else if (user.phone) {
+            phoneNumber = user.phone;
+        }
+        else {
+            throw new Error(`No stored phone number for ${user.name}.`);
+        }
+    }
+    exports.config.stored[event.event_source][user.id].phone = phoneNumber;
+    user.phone = phoneNumber;
+
 	twilioTransport.sendMessage({
 		to: phoneNumber,
 		from: exports.config.smsConfig.phoneNumber,
@@ -44,13 +69,30 @@ const respondChat = (api, event, user, message) => {
 };
 
 const emailMessage = (event, email, user, message) => {
-	mailTransport.sendMail({
+    ensure(event.event_source, {}, exports.config.stored);
+    ensure(user.id, {}, exports.config.stored[event.event_source]);
+    if (email === '-') {
+        if (exports.config.stored[event.event_source][user.id].email) {
+            email = exports.config.stored[event.event_source][user.id].email;
+        }
+        else if (user.email) {
+            email = user.email;
+        }
+        else {
+            throw new Error(`No stored email for ${user.name}.`);
+        }
+    }
+    exports.config.stored[event.event_source][user.id].email = email;
+    user.email = email;
+
+    mailTransport.sendMail({
 		from: `"Concierge (pester)" <${exports.config.emailConfig.auth.user}>`,
 		to: email,
 		subject: 'Pester',
 		html: `<h3>Pester</h3><p>This is a pester from <span style="color:red">${event.sender_name}</span> for <span style="color:cyan">${user.name}</span>.</p><hr /><p>${message}</p>`
 	}, (error, info) => {
-		if (error) {
+	    if (error) {
+	        console.critical(error);
 			throw new Error('Email could not be sent.');
 		}
 	});
@@ -92,15 +134,10 @@ const onPreStop = integ => {
 	}
 };
 
-const ensure = (name, def) => {
-	if (!exports.config[name]) {
-		exports.config[name] = def;
-	}
-};
-
 exports.load = platform => {
 	ensure('seen', []);
 	ensure('respond', []);
+	ensure('stored', {});
 	platform.on('message', onMessage);
 	if (exports.config.emailConfig) {
 		mailTransport = nodeMailer.createTransport(exports.config.emailConfig);
@@ -152,14 +189,15 @@ exports.run = (api, event) => {
 			short: '-tx',
 			description: 'Sends a text message to the persons phone.',
 			expects: ['PHONE_NUM'],
+            defaults: ['-'],
 			run: (out, vals) => {
-				if (!/^\+?[0-9]+$/.test(vals[0])) {
+			    if (!/^\+?[0-9]+$/.test(vals[0]) && vals[0] !== '-') {
 					throw new Error('Invalid phone number provided, please use international format (e.g. +64123456789)');
 				}
 				if (!exports.config.smsConfig) {
 					throw new Error('Please configure your SMS settings (see https://twilio.github.io/twilio-node) and restart the module before continuing.');
 				}
-				pesterQueue.push(textMessage.bind(this, vals[0]));
+				pesterQueue.push(textMessage.bind(this, event, vals[0]));
 			}
 		},
 		{
@@ -186,8 +224,9 @@ exports.run = (api, event) => {
 			short: '-em',
 			description: 'Sends a message to the persons the next time they send something in this chat.',
 			expects: ['EMAIL'],
+			defaults: ['-'],
 			run: (out, vals) => {
-				if (!emailValidator.validate(vals[0])) {
+			    if (!emailValidator.validate(vals[0]) && vals[0] !== '-') {
 					throw new Error('Invalid email address');
 				}
 				if (!exports.config.emailConfig) {
@@ -248,6 +287,11 @@ exports.run = (api, event) => {
 	}
 	api.sendMessage(`Pestering ${user.name} with the message "${message}". Options: ${Object.keys(args.parsed).join(', ')}.`, event.thread_id);
 	for (let pester of pesterQueue) {
-		pester(user, message);
+	    try {
+	        pester(user, message);
+	    }
+	    catch (e) {
+	        api.sendMessage(e.message, event.thread_id);
+	    }
 	}
 };
